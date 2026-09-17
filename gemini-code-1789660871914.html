@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DDoS Defender: Cyber Operations</title>
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --panel-bg: #161b22;
+            --accent-green: #238636;
+            --accent-red: #da3633;
+            --accent-blue: #1f6feb;
+            --text-color: #c9d1d9;
+            --border-color: #30363d;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            margin: 0 0 10px 0;
+            color: #58a6ff;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            width: 100%;
+            max-width: 900px;
+        }
+
+        .panel {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 15px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+
+        .status-bar {
+            grid-column: span 2;
+            display: flex;
+            justify-content: space-around;
+            background: #21262d;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+        }
+
+        .metric {
+            text-align: center;
+        }
+
+        .metric-title {
+            font-size: 0.8em;
+            text-transform: uppercase;
+            color: #8b949e;
+        }
+
+        .metric-value {
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+
+        .progress-bar-bg {
+            width: 150px;
+            height: 12px;
+            background: #30363d;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 5px;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            width: 100%;
+            transition: width 0.3s ease;
+        }
+
+        #canvas-container {
+            grid-column: span 2;
+            display: flex;
+            justify-content: center;
+        }
+
+        canvas {
+            background: #000;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        button {
+            background-color: #21262d;
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 12px;
+            font-size: 0.9em;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        button:hover:not(:disabled) {
+            background-color: #30363d;
+            border-color: #8b949e;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        button.active {
+            border-color: #58a6ff;
+            background-color: #1f6feb33;
+        }
+
+        .log {
+            height: 150px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.85em;
+            background: #0d1117;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+        }
+
+        .log-entry {
+            margin-bottom: 4px;
+        }
+
+        .log-warn { color: #d29922; }
+        .log-alert { color: #f85149; }
+        .log-info { color: #58a6ff; }
+        .log-success { color: #3fb950; }
+
+        .game-over-modal {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <h1>DDoS Defender</h1>
+
+    <div class="dashboard" style="position: relative;">
+        
+        <!-- Game Over Screen -->
+        <div id="game-over" class="game-over-modal hidden">
+            <h2 id="game-over-title" style="font-size: 2.5em; margin-bottom: 10px;">SYSTEM CRASHED</h2>
+            <p id="game-over-desc" style="font-size: 1.2em; margin-bottom: 20px;">Your servers were overwhelmed by traffic.</p>
+            <button onclick="resetGame()" style="padding: 15px 30px; font-size: 1.1em; background-color: var(--accent-blue);">Reboot Systems</button>
+        </div>
+
+        <!-- Top Metrics Bar -->
+        <div class="status-bar">
+            <div class="metric">
+                <div class="metric-title">Server Health</div>
+                <div id="hp-value" class="metric-value" style="color: #3fb950;">100%</div>
+                <div class="progress-bar-bg">
+                    <div id="hp-bar" class="progress-bar-fill" style="background: #3fb950; width: 100%;"></div>
+                </div>
+            </div>
+            <div class="metric">
+                <div class="metric-title">Bandwidth Load</div>
+                <div id="load-value" class="metric-value" style="color: #58a6ff;">0%</div>
+                <div class="progress-bar-bg">
+                    <div id="load-bar" class="progress-bar-fill" style="background: #58a6ff; width: 0%;"></div>
+                </div>
+            </div>
+            <div class="metric">
+                <div class="metric-title">CPU Power (Budget)</div>
+                <div id="power-value" class="metric-value" style="color: #d29922;">100</div>
+            </div>
+            <div class="metric">
+                <div class="metric-title">Uptime Score</div>
+                <div id="score-value" class="metric-value">0s</div>
+            </div>
+        </div>
+
+        <!-- Network Traffic Visualizer -->
+        <div id="canvas-container">
+            <canvas id="netCanvas" width="860" height="200"></canvas>
+        </div>
+
+        <!-- Active Countermeasures -->
+        <div class="panel">
+            <h3>Defensive Countermeasures</h3>
+            <div class="controls">
+                <button id="btn-scrub" onclick="toggleDefense('scrub')">
+                    <span>Cloud Traffic Scrubbing (Layer 3)</span>
+                    <span style="font-size: 0.8em; color: #8b949e;">Cost: 15 CPU</span>
+                </button>
+                <button id="btn-syn" onclick="toggleDefense('syn')">
+                    <span>Enable SYN Cookies (Layer 4)</span>
+                    <span style="font-size: 0.8em; color: #8b949e;">Cost: 10 CPU</span>
+                </button>
+                <button id="btn-waf" onclick="toggleDefense('waf')">
+                    <span>WAF Rate Limiting (Layer 7)</span>
+                    <span style="font-size: 0.8em; color: #8b949e;">Cost: 20 CPU</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- SOC Activity Logs -->
+        <div class="panel">
+            <h3>Network Console</h3>
+            <div id="log" class="log"></div>
+        </div>
+
+    </div>
+
+    <script>
+        // Game State Variables
+        let health = 100;
+        let load = 0;
+        let cpuPower = 100;
+        let score = 0;
+        let isRunning = true;
+        let gameLoopId, attackLoopId;
+
+        // Active Defenses
+        const defenses = {
+            scrub: false, // Counters Volumetric (Red)
+            syn: false,   // Counters Protocol (Yellow)
+            waf: false    // Counters Application (Purple)
+        };
+
+        const costs = { scrub: 15, syn: 10, waf: 20 };
+
+        // Canvas Setup
+        const canvas = document.getElementById('netCanvas');
+        const ctx = canvas.getContext('2d');
+        let packets = [];
+
+        // Network Nodes
+        const sourceX = 50;
+        const targetX = canvas.width - 50;
+        const centerY = canvas.height / 2;
+
+        class Packet {
+            constructor(type) {
+                this.x = sourceX;
+                this.y = centerY + (Math.random() * 120 - 60);
+                this.speed = 2 + Math.random() * 3;
+                this.type = type; // 'legit', 'volumetric', 'protocol', 'app'
+                this.size = type === 'volumetric' ? 8 : (type === 'legit' ? 4 : 6);
+                
+                // Color mapping by threat vector
+                if (type === 'legit') this.color = '#3fb950';
+                else if (type === 'volumetric') this.color = '#f85149'; // Red (Layer 3)
+                else if (type === 'protocol') this.color = '#d29922';   // Yellow (Layer 4)
+                else if (type === 'app') this.color = '#a371f7';        // Purple (Layer 7)
+            }
+
+            update() {
+                this.x += this.speed;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+        }
+
+        function logMessage(msg, type = 'info') {
+            const logEl = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            const time = new Date().toLocaleTimeString().split(' ')[0];
+            entry.innerText = `[${time}] ${msg}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function toggleDefense(type) {
+            if (!isRunning) return;
+
+            if (!defenses[type]) {
+                if (cpuPower >= costs[type]) {
+                    defenses[type] = true;
+                    cpuPower -= costs[type];
+                    document.getElementById(`btn-${type}`).classList.add('active');
+                    logMessage(`Activated ${type.toUpperCase()} countermeasure.`, 'success');
+                } else {
+                    logMessage(`Insufficient CPU Power to deploy ${type.toUpperCase()}!`, 'warn');
+                }
+            } else {
+                defenses[type] = false;
+                cpuPower += costs[type];
+                document.getElementById(`btn-${type}`).classList.remove('active');
+                logMessage(`Deactivated ${type.toUpperCase()} countermeasure.`, 'info');
+            }
+            updateUI();
+        }
+
+        function spawnPackets() {
+            if (!isRunning) return;
+
+            // Spawn legitimate traffic
+            packets.push(new Packet('legit'));
+
+            // Random attack waves
+            const rand = Math.random();
+            if (rand < 0.3) packets.push(new Packet('volumetric'));
+            if (rand < 0.25) packets.push(new Packet('protocol'));
+            if (rand < 0.2) packets.push(new Packet('app'));
+
+            // Adjust spawn frequency dynamically over time
+            let nextSpawn = Math.max(100, 400 - Math.floor(score / 5) * 10);
+            attackLoopId = setTimeout(spawnPackets, nextSpawn);
+        }
+
+        function updateGame() {
+            if (!isRunning) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Infrastructure Nodes
+            ctx.fillStyle = '#1f6feb';
+            ctx.beginPath(); ctx.arc(sourceX, centerY, 20, 0, Math.PI * 2); ctx.fill(); // Client network
+            ctx.fillStyle = '#238636';
+            ctx.beginPath(); ctx.arc(targetX, centerY, 25, 0, Math.PI * 2); ctx.fill(); // Enterprise Server
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '10px Arial';
+            ctx.fillText("Internet", sourceX - 18, centerY + 35);
+            ctx.fillText("Server", targetX - 15, centerY + 40);
+
+            let incomingLoad = 0;
+
+            for (let i = packets.length - 1; i >= 0; i--) {
+                let p = packets[i];
+                p.update();
+                p.draw();
+
+                // Interception / Filter Check
+                let intercepted = false;
+                if (p.x > canvas.width / 2) {
+                    if (p.type === 'volumetric' && defenses.scrub) intercepted = true;
+                    if (p.type === 'protocol' && defenses.syn) intercepted = true;
+                    if (p.type === 'app' && defenses.waf) intercepted = true;
+                }
+
+                if (intercepted) {
+                    packets.splice(i, 1);
+                    continue;
+                }
+
+                // Impact on Server hit
+                if (p.x >= targetX - 25) {
+                    if (p.type === 'legit') {
+                        // Healthy traffic slightly restores stability if load is low
+                    } else {
+                        if (p.type === 'volumetric') { incomingLoad += 4; health -= 1.5; }
+                        if (p.type === 'protocol') { incomingLoad += 6; health -= 2; }
+                        if (p.type === 'app') { incomingLoad += 8; health -= 2.5; }
+                    }
+                    packets.splice(i, 1);
+                }
+            }
+
+            // Update Metrics
+            load = Math.min(100, Math.max(0, load + (incomingLoad > 0 ? 2 : -1)));
+            health = Math.max(0, Math.min(100, health));
+
+            // Regenerate CPU slightly if defenses are off
+            if (cpuPower < 100) {
+                let activeCount = Object.values(defenses).filter(Boolean).length;
+                if (activeCount === 0) cpuPower = Math.min(100, cpuPower + 0.05);
+            }
+
+            updateUI();
+
+            if (health <= 0) {
+                endGame();
+                return;
+            }
+
+            gameLoopId = requestAnimationFrame(updateGame);
+        }
+
+        function updateUI() {
+            document.getElementById('hp-value').innerText = `${Math.round(health)}%`;
+            document.getElementById('hp-bar').style.width = `${health}%`;
+            
+            // Dynamic Bar Colors
+            const hpBar = document.getElementById('hp-bar');
+            if (health < 30) hpBar.style.background = '#f85149';
+            else if (health < 60) hpBar.style.background = '#d29922';
+            else hpBar.style.background = '#3fb950';
+
+            document.getElementById('load-value').innerText = `${Math.round(load)}%`;
+            document.getElementById('load-bar').style.width = `${load}%`;
+
+            document.getElementById('power-value').innerText = Math.round(cpuPower);
+            document.getElementById('score-value').innerText = `${score}s`;
+        }
+
+        // Score Timer
+        setInterval(() => {
+            if (isRunning) {
+                score++;
+                if (score % 15 === 0) {
+                    logMessage(`ATTACK INTENSITY INCREASING! Uptime: ${score}s`, 'warn');
+                }
+            }
+        }, 1000);
+
+        function endGame() {
+            isRunning = false;
+            clearTimeout(attackLoopId);
+            cancelAnimationFrame(gameLoopId);
+            document.getElementById('game-over').classList.remove('hidden');
+            document.getElementById('game-over-desc').innerText = `You kept the services online for ${score} seconds before the infrastructure collapsed.`;
+            logMessage("CRITICAL FAILURE: Server offline.", 'alert');
+        }
+
+        function resetGame() {
+            health = 100;
+            load = 0;
+            cpuPower = 100;
+            score = 0;
+            packets = [];
+            isRunning = true;
+            
+            for (let d in defenses) {
+                defenses[d] = false;
+                document.getElementById(`btn-${d}`).classList.remove('active');
+            }
+
+            document.getElementById('game-over').classList.add('hidden');
+            document.getElementById('log').innerHTML = '';
+            logMessage("System reboot initialized. Monitoring network interfaces...", 'info');
+            
+            spawnPackets();
+            updateGame();
+        }
+
+        // Start Game
+        logMessage("SOC Terminal Active. Defense controls ready.", 'info');
+        spawnPackets();
+        updateGame();
+    </script>
+</body>
+</html>
